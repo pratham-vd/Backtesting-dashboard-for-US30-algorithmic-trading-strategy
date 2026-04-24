@@ -1,6 +1,6 @@
 // src/api.js — All backend calls in one place
 
-const BASE = '/api'
+const BASE = 'https://backtesting-software-us30-backend.onrender.com/api'
 
 export const api = {
 
