@@ -24,7 +24,11 @@ app = FastAPI(title="US30 Backtest API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://backtesting-software-us30.vercel.app"
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
