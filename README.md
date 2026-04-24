@@ -23,7 +23,7 @@ Open two terminals:
 **Terminal 1 — Backend**
 ```bash
 cd backend
-uvicorn api:app --reload --port 8000
+uvicorn backend.api:app --reload --port 8000
 ```
 
 **Terminal 2 — Frontend**
