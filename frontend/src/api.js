@@ -1,6 +1,6 @@
 // src/api.js — All backend calls in one place
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const BASE = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : '/api'
 
 export const api = {
 
