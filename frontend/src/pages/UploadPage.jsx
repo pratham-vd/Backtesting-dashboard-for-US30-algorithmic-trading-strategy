@@ -7,6 +7,8 @@ export default function UploadPage({
   meta, setMeta,
   pips, setPips,
   tp,   setTp,
+  targetTime,   setTargetTime,
+  offsetSecs,   setOffsetSecs,
   hasPreviousResults
 }) {
   const [drag,      setDrag]      = useState(false)
@@ -16,11 +18,25 @@ export default function UploadPage({
   const [error,     setError]     = useState(null)
   const inputRef = useRef()
 
-  const pipsNum = Math.max(1, parseInt(pips) || 0)
-  const tpNum   = Math.max(1, parseInt(tp)   || 0)
-  const beWR    = tpNum + pipsNum * 2 > 0
+  const pipsNum   = Math.max(1, parseInt(pips) || 0)
+  const tpNum     = Math.max(1, parseInt(tp)   || 0)
+  const offsetNum = Math.max(0, parseInt(offsetSecs) || 0)
+  const beWR      = tpNum + pipsNum * 2 > 0
     ? ((tpNum / (tpNum + pipsNum * 2)) * 100).toFixed(1)
     : '—'
+
+  // Compute ref capture time for display
+  const computedRefTime = (() => {
+    const [hh, mm] = (targetTime || '20:00').split(':').map(Number)
+    const totalSecs = hh * 3600 + mm * 60 - offsetNum
+    const rh = Math.floor(totalSecs / 3600)
+    const rm = Math.floor((totalSecs % 3600) / 60)
+    const rs = totalSecs % 60
+    return `${String(rh).padStart(2,'0')}:${String(rm).padStart(2,'0')}:${String(rs).padStart(2,'0')}`
+  })()
+
+  // Parse target for api
+  const [targetHourNum, targetMinuteNum] = (targetTime || '20:00').split(':').map(Number)
 
   const addLog = (msg, type = '') =>
     setLogs(prev => [...prev, { msg, type, id: Date.now() + Math.random() }])
@@ -58,7 +74,7 @@ export default function UploadPage({
     setError(null)
     addLog(`Running backtest  PIPS=${pipsNum}  TP=${tpNum}...`, 'info')
     try {
-      const res = await api.run(pipsNum, tpNum)
+      const res = await api.run(pipsNum, tpNum, targetHourNum, targetMinuteNum, offsetNum)
       addLog(`✓ Done — ${res.days_processed} days processed`, 'ok')
       addLog('Fetching results...', 'info')
       const summary = await api.summary()
@@ -87,7 +103,7 @@ export default function UploadPage({
   }
 
   return (
-    <div className="page-body" style={{ maxWidth: 700 }}>
+    <div className="page-body" style={{ maxWidth: 700, margin: '0 auto' }}>
       <div className="section-title" style={{ marginBottom: 24 }}>Data File</div>
 
       {/* ── File zone ── */}
@@ -208,6 +224,56 @@ export default function UploadPage({
             </div>
           </div>
 
+          {/* ── Timing parameters ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+
+            {/* Target time */}
+            <div className="card" style={{ padding: '18px 20px 16px' }}>
+              <div className="card-label" style={{ marginBottom: 12 }}>Entry Time (IST)</div>
+              <input
+                type="time"
+                value={targetTime}
+                onChange={(e) => setTargetTime(e.target.value)}
+                style={{
+                  width: '100%', background: 'transparent',
+                  border: 'none', borderBottom: '1px solid var(--border-hi)',
+                  color: 'var(--text-0)', fontFamily: 'var(--mono)',
+                  fontSize: 26, fontWeight: 600,
+                  padding: '8px 0 6px', outline: 'none',
+                  colorScheme: 'dark',
+                }}
+              />
+              <div className="card-sub" style={{ marginTop: 10 }}>
+                Time at which stop orders are placed (IST)
+              </div>
+            </div>
+
+            {/* Offset seconds */}
+            <div className="card" style={{ padding: '18px 20px 16px' }}>
+              <div className="card-label" style={{ marginBottom: 12 }}>Seconds Before Entry</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={offsetSecs}
+                onChange={(e) => setOffsetSecs(e.target.value.replace(/[^0-9]/g, ''))}
+                onBlur={() => setOffsetSecs(String(Math.min(300, Math.max(0, parseInt(offsetSecs) || 15))))}
+                onFocus={(e) => e.target.select()}
+                style={{
+                  width: '100%', background: 'transparent',
+                  border: 'none', borderBottom: '1px solid var(--border-hi)',
+                  color: 'var(--text-0)', fontFamily: 'var(--mono)',
+                  fontSize: 26, fontWeight: 600,
+                  padding: '8px 0 6px', outline: 'none', letterSpacing: '-0.5px',
+                }}
+              />
+              <div className="card-sub" style={{ marginTop: 10 }}>
+                Ref captured at&nbsp;
+                <span style={{ color: 'var(--green)' }}>{computedRefTime}</span>
+                &nbsp;IST
+              </div>
+            </div>
+          </div>
+
           {/* Levels preview */}
           <div style={{
             display: 'flex', gap: 20, marginBottom: 24,
@@ -225,6 +291,10 @@ export default function UploadPage({
             <span>RR = <span style={{ color: 'var(--text-0)' }}>{tpNum}:{pipsNum * 2}</span></span>
             <span style={{ color: 'var(--border-hi)' }}>│</span>
             <span>Breakeven = <span style={{ color: 'var(--yellow)' }}>{beWR}%</span></span>
+            <span style={{ color: 'var(--border-hi)' }}>│</span>
+            <span>Ref at <span style={{ color: 'var(--text-0)' }}>{computedRefTime}</span></span>
+            <span style={{ color: 'var(--border-hi)' }}>│</span>
+            <span>Entry <span style={{ color: 'var(--text-0)' }}>{targetTime}</span> IST</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

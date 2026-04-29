@@ -14,14 +14,15 @@
 #  │ BUY timeout  │ last BID      │ Conservative long exit    │
 #  │ SELL timeout │ last ASK      │ Conservative short exit   │
 #  └──────────────┴───────────────┴───────────────────────────┘
+#
+#  NOTE: _REF_TIME is NOT cached at module level — config values
+#  are read fresh inside simulate_day so runtime overrides from
+#  api.py are always respected.
 # ─────────────────────────────────────────────────────────────
 
 from datetime import time
 import config
 from strategy import compute_levels
-
-# Pre-build time object once (not inside the hot loop)
-_REF_TIME = time(config.REF_HOUR, config.REF_MINUTE, config.REF_SECOND)
 
 
 def simulate_day(date, day_ticks) -> dict:
@@ -36,10 +37,13 @@ def simulate_day(date, day_ticks) -> dict:
 
     Returns
     -------
-    dict with full trade details (see keys below)
+    dict with full trade details
     """
 
-    # ── Result template (all keys always present for clean CSV) ──
+    # Read timing from config fresh each call — api.py overrides these
+    # before the simulation loop starts.
+    ref_time = time(config.REF_HOUR, config.REF_MINUTE, config.REF_SECOND)
+
     result = {
         'date'             : str(date),
         'ref_time'         : None,
@@ -55,15 +59,15 @@ def simulate_day(date, day_ticks) -> dict:
         'entry_price'      : None,
         'exit_time'        : None,
         'exit_price'       : None,
-        'exit_type'        : None,   # TP | SL | TIMEOUT | NO_TRADE | NO_DATA
+        'exit_type'        : None,
         'pnl_points'       : None,
         'duration_seconds' : None,
     }
 
     # ═══════════════════════════════════════════════════════════
-    #  STEP 1 — Capture ref_price (last tick at or before 19:59:45)
+    #  STEP 1 — Capture ref_price (last tick at or before ref_time)
     # ═══════════════════════════════════════════════════════════
-    ref_candidates = day_ticks[day_ticks.index.time <= _REF_TIME]
+    ref_candidates = day_ticks[day_ticks.index.time <= ref_time]
 
     if len(ref_candidates) == 0:
         result['exit_type'] = 'NO_DATA'
@@ -75,11 +79,10 @@ def simulate_day(date, day_ticks) -> dict:
 
     result['ref_time'] = str(ref_ts)
     levels = compute_levels(ref_price)
-    result.update(levels)   # writes ref_price + all 6 levels into result
+    result.update(levels)
 
     # ═══════════════════════════════════════════════════════════
     #  STEP 2 — Entry window (all ticks AFTER the ref tick)
-    #           This includes 19:59:46 onward AND 20:00+ ticks
     # ═══════════════════════════════════════════════════════════
     entry_window = day_ticks[day_ticks.index > ref_ts]
 
@@ -106,22 +109,14 @@ def simulate_day(date, day_ticks) -> dict:
         sell_hit = bid <= sell_entry
 
         if buy_hit and sell_hit:
-            # Both levels hit on same tick
-            # Resolve: whichever is closer to ref_price triggered first
             if abs(ask - ref_price) <= abs(bid - ref_price):
-                direction   = 'BUY'
-                entry_price = ask          # buy stop fills at ask
+                direction, entry_price = 'BUY',  ask
             else:
-                direction   = 'SELL'
-                entry_price = bid          # sell stop fills at bid
-
+                direction, entry_price = 'SELL', bid
         elif buy_hit:
-            direction   = 'BUY'
-            entry_price = ask
-
+            direction, entry_price = 'BUY',  ask
         elif sell_hit:
-            direction   = 'SELL'
-            entry_price = bid
+            direction, entry_price = 'SELL', bid
 
         if direction is not None:
             entry_ts  = ts
@@ -157,9 +152,7 @@ def simulate_day(date, day_ticks) -> dict:
         if direction == 'BUY':
             tp_hit = bid >= buy_tp
             sl_hit = bid <= buy_sl
-
             if tp_hit and sl_hit:
-                # Same tick conflict — closer to entry wins
                 if abs(bid - buy_tp) <= abs(bid - buy_sl):
                     exit_price, exit_type = buy_tp, 'TP'
                 else:
@@ -172,7 +165,6 @@ def simulate_day(date, day_ticks) -> dict:
         else:  # SELL
             tp_hit = ask <= sell_tp
             sl_hit = ask >= sell_sl
-
             if tp_hit and sl_hit:
                 if abs(ask - sell_tp) <= abs(ask - sell_sl):
                     exit_price, exit_type = sell_tp, 'TP'
@@ -188,18 +180,15 @@ def simulate_day(date, day_ticks) -> dict:
             break
 
     # ═══════════════════════════════════════════════════════════
-    #  STEP 5 — Handle TIMEOUT (no exit found within window)
+    #  STEP 5 — Handle TIMEOUT
     # ═══════════════════════════════════════════════════════════
     if exit_type is None:
         exit_type = 'TIMEOUT'
-
         if len(post_entry) > 0:
-            last     = post_entry.iloc[-1]
-            exit_ts  = post_entry.index[-1]
-            # Exit at bid for long (conservative), ask for short (conservative)
+            last       = post_entry.iloc[-1]
+            exit_ts    = post_entry.index[-1]
             exit_price = last['bid'] if direction == 'BUY' else last['ask']
         else:
-            # Entry was the very last tick in the window — use entry price
             exit_ts    = entry_ts
             exit_price = entry_price
 
@@ -207,18 +196,12 @@ def simulate_day(date, day_ticks) -> dict:
     #  STEP 6 — P&L and duration
     # ═══════════════════════════════════════════════════════════
     exit_price = round(exit_price, 3)
-
-    if direction == 'BUY':
-        pnl = exit_price - entry_price    # exit bid − entry ask
-    else:
-        pnl = entry_price - exit_price    # entry bid − exit ask
+    pnl = (exit_price - entry_price) if direction == 'BUY' else (entry_price - exit_price)
 
     result['exit_price']       = exit_price
     result['exit_time']        = str(exit_ts)
     result['exit_type']        = exit_type
     result['pnl_points']       = round(pnl, 3)
-    result['duration_seconds'] = round(
-        (exit_ts - entry_ts).total_seconds(), 1
-    )
+    result['duration_seconds'] = round((exit_ts - entry_ts).total_seconds(), 1)
 
     return result

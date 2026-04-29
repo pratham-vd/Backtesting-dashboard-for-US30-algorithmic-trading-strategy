@@ -147,6 +147,16 @@ def root():
     return {"status": "US30 Backtest API running"}
 
 
+@app.post("/reset")
+def reset():
+    """Clear all uploaded data and backtest results from memory."""
+    _state["parquet_path"] = None
+    _state["results"]      = None
+    _state["summary"]      = None
+    _state["meta"]         = None
+    return {"success": True}
+
+
 @app.get("/status")
 def status():
     return {
@@ -154,8 +164,11 @@ def status():
         "has_results": _state["results"] is not None,
         "meta": _state["meta"],
         "last_config": {
-            "pips_distance": config.PIPS_DISTANCE,
-            "tp_pips":       config.TP_PIPS,
+            "pips_distance":  config.PIPS_DISTANCE,
+            "tp_pips":        config.TP_PIPS,
+            "target_hour":    config.TARGET_HOUR,
+            "target_minute":  config.TARGET_MINUTE,
+            "offset_seconds": config.OFFSET_SECONDS,
         } if _state["results"] is not None else None,
     }
 
@@ -200,13 +213,38 @@ async def upload_parquet(file: UploadFile = File(...)):
 
 
 @app.post("/run")
-def run_backtest(pips_distance: int = 20, tp_pips: int = 30):
+def run_backtest(
+    pips_distance:  int = 20,
+    tp_pips:        int = 30,
+    target_hour:    int = 20,
+    target_minute:  int = 0,
+    offset_seconds: int = 15,
+):
     if _state["parquet_path"] is None:
         raise HTTPException(400, "No parquet file uploaded yet.")
+
+    from datetime import datetime, timedelta
 
     config.PIPS_DISTANCE = pips_distance
     config.TP_PIPS       = tp_pips
     config.PARQUET_PATH  = _state["parquet_path"]
+
+    # Compute ref capture time = target - offset
+    config.TARGET_HOUR    = target_hour
+    config.TARGET_MINUTE  = target_minute
+    config.OFFSET_SECONDS = offset_seconds
+
+    target_dt  = datetime(2000, 1, 1, target_hour, target_minute, 0)
+    ref_dt     = target_dt - timedelta(seconds=offset_seconds)
+    timeout_dt = target_dt + timedelta(minutes=4)
+
+    config.REF_HOUR   = ref_dt.hour
+    config.REF_MINUTE = ref_dt.minute
+    config.REF_SECOND = ref_dt.second
+
+    config.TIMEOUT_HOUR   = timeout_dt.hour
+    config.TIMEOUT_MINUTE = timeout_dt.minute
+    config.TIMEOUT_SECOND = timeout_dt.second
 
     try:
         import data_loader

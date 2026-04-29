@@ -19,6 +19,8 @@ export default function App() {
   const [meta,     setMeta]     = useState(null)   // file info after upload
   const [pips,     setPips]     = useState('20')   // strategy params
   const [tp,       setTp]       = useState('30')
+  const [targetTime,   setTargetTime]   = useState('20:00')  // HH:MM IST
+  const [offsetSecs,   setOffsetSecs]   = useState('15')     // seconds before target
 
   // Restore full state on mount / page refresh
   useEffect(() => {
@@ -31,6 +33,12 @@ export default function App() {
       if (s.last_config) {
         setPips(String(s.last_config.pips_distance))
         setTp(String(s.last_config.tp_pips))
+        if (s.last_config.target_hour !== undefined) {
+          const hh = String(s.last_config.target_hour).padStart(2,'0')
+          const mm = String(s.last_config.target_minute).padStart(2,'0')
+          setTargetTime(`${hh}:${mm}`)
+          setOffsetSecs(String(s.last_config.offset_seconds))
+        }
       }
       // Restore results and go to dashboard
       if (s.has_results) {
@@ -52,7 +60,21 @@ export default function App() {
 
       {/* ── Sidebar ─────────────────────────────────── */}
       <aside className="sidebar">
-        <div className="sidebar-logo">
+        <div
+          className="sidebar-logo"
+          onClick={async () => {
+            try { await api.reset() } catch {}
+            setSummary(null)
+            setMeta(null)
+            setPips('20')
+            setTp('30')
+            setPage('upload')
+          }}
+          title="Reset everything"
+          style={{ cursor: 'pointer', userSelect: 'none', transition: 'opacity 0.15s' }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+        >
           <div className="ticker">US30</div>
           <div className="sub">Backtest Terminal</div>
         </div>
@@ -92,6 +114,10 @@ export default function App() {
             setPips={setPips}
             tp={tp}
             setTp={setTp}
+            targetTime={targetTime}
+            setTargetTime={setTargetTime}
+            offsetSecs={offsetSecs}
+            setOffsetSecs={setOffsetSecs}
             hasPreviousResults={summary !== null}
           />
         )}

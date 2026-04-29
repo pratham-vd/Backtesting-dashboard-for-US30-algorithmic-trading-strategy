@@ -4,6 +4,11 @@ const BASE = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : '/api
 
 export const api = {
 
+  async reset() {
+    const r = await fetch(`${BASE}/reset`, { method: 'POST' })
+    return r.json()
+  },
+
   async status() {
     const r = await fetch(`${BASE}/status`)
     return r.json()
@@ -20,9 +25,9 @@ export const api = {
     return r.json()
   },
 
-  async run(pipsDistance = 20, tpPips = 30) {
+  async run(pipsDistance = 20, tpPips = 30, targetHour = 20, targetMinute = 0, offsetSeconds = 15) {
     const r = await fetch(
-      `${BASE}/run?pips_distance=${pipsDistance}&tp_pips=${tpPips}`,
+      `${BASE}/run?pips_distance=${pipsDistance}&tp_pips=${tpPips}&target_hour=${targetHour}&target_minute=${targetMinute}&offset_seconds=${offsetSeconds}`,
       { method: 'POST' }
     )
     if (!r.ok) {
